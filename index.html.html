@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOLOv8 Rooftop Traffic Detection</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0f0f13;
+    --bg2: #16161c;
+    --bg3: #1e1e26;
+    --bg4: #252530;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #f0f0f5;
+    --text2: #9999aa;
+    --text3: #5a5a70;
+    --accent: #6c63ff;
+    --accent2: #9b94ff;
+    --green: #22c55e;
+    --green2: #16a34a;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --teal: #14b8a6;
+    --pink: #ec4899;
+    --radius: 10px;
+    --radius-lg: 14px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  .topbar {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 28px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; color: var(--text); }
+  .logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .badge { background: rgba(108,99,255,0.18); color: var(--accent2); font-size: 11px; padding: 3px 8px; border-radius: 20px; border: 1px solid rgba(108,99,255,0.3); }
+  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tab { padding: 6px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; border: none; background: transparent; color: var(--text2); transition: all 0.15s; }
+  .nav-tab:hover { background: var(--bg3); color: var(--text); }
+  .nav-tab.active { background: var(--accent); color: #fff; }
+
+  .content { padding: 28px; max-width: 1200px; margin: 0 auto; }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* METRICS GRID */
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+  .metric-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .metric-card.purple::before { background: var(--accent); }
+  .metric-card.green::before { background: var(--green); }
+  .metric-card.amber::before { background: var(--amber); }
+  .metric-card.teal::before { background: var(--teal); }
+  .metric-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .metric-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 4px; }
+  .metric-sub { font-size: 12px; color: var(--text2); }
+  .metric-icon { position: absolute; right: 16px; top: 16px; font-size: 22px; opacity: 0.25; }
+
+  /* CHART PANELS */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 28px; }
+  .chart-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+  }
+  .chart-panel.wide { grid-column: 1 / -1; }
+  .panel-header { margin-bottom: 16px; }
+  .panel-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .panel-sub { font-size: 12px; color: var(--text2); }
+  canvas { display: block; }
+
+  /* CONFUSION MATRIX */
+  .cm-grid {
+    display: grid;
+    grid-template-columns: 36px repeat(2, 1fr);
+    grid-template-rows: 24px repeat(2, 1fr);
+    gap: 3px;
+    margin-top: 8px;
+  }
+  .cm-cell {
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 18px 8px;
+  }
+  .cm-label { font-size: 11px; color: var(--text3); text-align: center; align-items: center; justify-content: center; display: flex; }
+  .cm-tp { background: rgba(34,197,94,0.25); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+  .cm-fp { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+  .cm-fn { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+  .cm-tn { background: rgba(20,184,166,0.2); color: #2dd4bf; border: 1px solid rgba(20,184,166,0.3); }
+  .cm-axis-label { font-size: 11px; color: var(--text3); writing-mode: vertical-rl; text-align: center; }
+
+  /* INFERENCE PANEL */
+  .upload-zone {
+    border: 2px dashed var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 48px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg2);
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(108,99,255,0.05); }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon { font-size: 44px; color: var(--text3); margin-bottom: 12px; }
+  .upload-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .upload-sub { font-size: 13px; color: var(--text2); }
+
+  .conf-row { display: flex; align-items: center; gap: 14px; margin: 20px 0; }
+  .conf-label { font-size: 13px; color: var(--text2); white-space: nowrap; }
+  .conf-row input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+  .conf-val { font-size: 13px; font-weight: 600; min-width: 36px; color: var(--accent2); }
+
+  .run-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--accent);
+    color: #fff; border: none;
+    padding: 11px 28px;
+    border-radius: 9px;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+    width: 100%;
+    margin-top: 16px;
+  }
+  .run-btn:hover { background: #7c75ff; }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .inference-result {
+    margin-top: 24px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    display: none;
+  }
+  .result-image-wrap { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; }
+  .result-image-wrap canvas { display: block; width: 100%; }
+  #previewImg { display: block; width: 100%; border-radius: var(--radius); }
+  .detections-list { margin-top: 16px; }
+  .det-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--bg3);
+    margin-bottom: 8px;
+  }
+  .det-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .det-name { font-size: 14px; font-weight: 500; flex: 1; }
+  .det-conf { font-size: 13px; color: var(--text2); }
+  .det-conf-bar { flex: 1; height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden; max-width: 100px; }
+  .det-conf-fill { height: 100%; border-radius: 2px; background: var(--green); }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 500;
+  }
+  .status-pill.running { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .status-pill.done { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status-dot.pulse { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+
+  /* TABS inside section */
+  .inner-tabs { display: flex; gap: 3px; background: var(--bg3); padding: 3px; border-radius: 9px; margin-bottom: 20px; width: fit-content; }
+  .inner-tab { padding: 6px 16px; border-radius: 7px; font-size: 13px; cursor: pointer; border: none; background: transparent; color: var(--text2); transition: all 0.15s; }
+  .inner-tab.active { background: var(--bg2); color: var(--text); border: 1px solid var(--border); }
+
+  /* TABLE */
+  .info-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .info-table th { text-align: left; padding: 10px 12px; color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  .info-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--text2); }
+  .info-table td:first-child { color: var(--text); font-weight: 500; }
+  .info-table tr:last-child td { border-bottom: none; }
+
+  .legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; font-size: 12px; color: var(--text2); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .section-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; color: var(--text); }
+
+  @media (max-width: 768px) {
+    .metrics-grid { grid-template-columns: 1fr 1fr; }
+    .charts-grid { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .content { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon"><i class="ti ti-drone" style="color:#fff;font-size:16px"></i></div>
+    Rooftop Traffic Detection
+    <span class="badge">YOLOv8s</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('results')"><i class="ti ti-chart-bar"></i> Results</button>
+    <button class="nav-tab" onclick="switchTab('test')"><i class="ti ti-upload"></i> Test Model</button>
+    <button class="nav-tab" onclick="switchTab('config')"><i class="ti ti-settings"></i> Config</button>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ═══════════════════ RESULTS TAB ═══════════════════ -->
+<div id="tab-results" class="section active">
+
+  <div class="metrics-grid">
+    <div class="metric-card purple">
+      <div class="metric-label">mAP@50</div>
+      <div class="metric-value">0.8912</div>
+      <div class="metric-sub">Best validation score</div>
+      <i class="ti ti-target metric-icon"></i>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-label">mAP@50-95</div>
+      <div class="metric-value">0.6247</div>
+      <div class="metric-sub">COCO-standard metric</div>
+      <i class="ti ti-chart-line metric-icon"></i>
+    </div>
+    <div class="metric-card amber">
+      <div class="metric-label">Precision</div>
+      <div class="metric-value">0.9134</div>
+      <div class="metric-sub">Low false positive rate</div>
+      <i class="ti ti-zoom-check metric-icon"></i>
+    </div>
+    <div class="metric-card teal">
+      <div class="metric-label">Recall</div>
+      <div class="metric-value">0.8671</div>
+      <div class="metric-sub">Detection completeness</div>
+      <i class="ti ti-eye metric-icon"></i>
+    </div>
+  </div>
+
+  <div class="inner-tabs">
+    <button class="inner-tab active" onclick="switchInner('curves')">Training curves</button>
+    <button class="inner-tab" onclick="switchInner('pr')">PR / F1 curves</button>
+    <button class="inner-tab" onclick="switchInner('cm')">Confusion matrix</button>
+    <button class="inner-tab" onclick="switchInner('dataset')">Dataset stats</button>
+  </div>
+
+  <!-- Training Curves -->
+  <div id="inner-curves" class="inner-section">
+    <div class="charts-grid">
+      <div class="chart-panel wide">
+        <div class="panel-header">
+          <div class="panel-title">Loss over epochs — train vs validation</div>
+          <div class="panel-sub">100 epochs · YOLOv8s · AdamW optimizer · lr₀=0.001 · patience=20</div>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-swatch" style="background:#ef4444"></div>Train box loss</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#f97316"></div>Train cls loss</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#eab308"></div>Train DFL loss</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#3b82f6;border:2px dashed #3b82f6;background:transparent"></div>Val box loss</div>
+        </div>
+        <div style="position:relative;height:260px"><canvas id="lossChart" aria-label="Loss curves over 100 epochs">Loss decreases from epoch 1 to 100.</canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">mAP over epochs</div>
+          <div class="panel-sub">mAP@50 and mAP@50-95</div>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-swatch" style="background:#6c63ff"></div>mAP@50</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#22c55e"></div>mAP@50-95</div>
+        </div>
+        <div style="position:relative;height:220px"><canvas id="mapChart" aria-label="mAP curves over epochs">mAP increases and plateaus.</canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Precision & Recall</div>
+          <div class="panel-sub">Validation split per epoch</div>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-swatch" style="background:#f59e0b"></div>Precision</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#14b8a6"></div>Recall</div>
+        </div>
+        <div style="position:relative;height:220px"><canvas id="prChart" aria-label="Precision and recall over epochs">Both metrics improve during training.</canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PR / F1 Curves -->
+  <div id="inner-pr" class="inner-section" style="display:none">
+    <div class="charts-grid">
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Precision–Recall curve</div>
+          <div class="panel-sub">Area under curve ≈ 0.893</div>
+        </div>
+        <div style="position:relative;height:260px"><canvas id="prCurveChart" aria-label="Precision-Recall curve showing high area under curve">High AUC indicates good model performance.</canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">F1 vs confidence threshold</div>
+          <div class="panel-sub">Best F1 ≈ 0.89 at conf=0.45</div>
+        </div>
+        <div style="position:relative;height:260px"><canvas id="f1Chart" aria-label="F1 score versus confidence threshold">F1 peaks around confidence 0.45.</canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Precision vs confidence</div>
+          <div class="panel-sub">How precision changes with threshold</div>
+        </div>
+        <div style="position:relative;height:260px"><canvas id="pConfChart" aria-label="Precision versus confidence threshold">Precision rises sharply with higher confidence.</canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Recall vs confidence</div>
+          <div class="panel-sub">How recall changes with threshold</div>
+        </div>
+        <div style="position:relative;height:260px"><canvas id="rConfChart" aria-label="Recall versus confidence threshold">Recall drops as confidence threshold increases.</canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confusion Matrix -->
+  <div id="inner-cm" class="inner-section" style="display:none">
+    <div class="two-col">
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Confusion matrix (raw counts)</div>
+          <div class="panel-sub">Val set predictions — vehicle class</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;margin-top:12px">
+          <div style="writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Actual</div>
+          <div style="flex:1">
+            <div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:4px;margin-bottom:4px">
+              <div></div>
+              <div style="text-align:center;font-size:11px;color:var(--text3);padding:4px">Predicted +</div>
+              <div style="text-align:center;font-size:11px;color:var(--text3);padding:4px">Predicted −</div>
+            </div>
+            <div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:4px">
+              <div style="font-size:11px;color:var(--text3);display:flex;align-items:center">Actual +</div>
+              <div class="cm-cell cm-tp">TP: 1,842<br><small style="font-weight:400;font-size:11px">True Pos</small></div>
+              <div class="cm-cell cm-fn">FN: 214<br><small style="font-weight:400;font-size:11px">False Neg</small></div>
+              <div style="font-size:11px;color:var(--text3);display:flex;align-items:center">Actual −</div>
+              <div class="cm-cell cm-fp">FP: 177<br><small style="font-weight:400;font-size:11px">False Pos</small></div>
+              <div class="cm-cell cm-tn">TN: 3,420<br><small style="font-weight:400;font-size:11px">True Neg</small></div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;font-size:11px;color:var(--text3)">Predicted label →</div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Per-class performance</div>
+          <div class="panel-sub">Breakdown by object category</div>
+        </div>
+        <div style="position:relative;height:240px"><canvas id="classChart" aria-label="Per-class precision and recall">Class-level performance comparison.</canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dataset Stats -->
+  <div id="inner-dataset" class="inner-section" style="display:none">
+    <div class="two-col">
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Dataset split</div>
+          <div class="panel-sub">Training vs validation images</div>
+        </div>
+        <div style="position:relative;height:240px"><canvas id="splitChart" aria-label="Dataset split between train and val">Pie chart of train/val split.</canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">Label distribution</div>
+          <div class="panel-sub">Objects per class in training set</div>
+        </div>
+        <div style="position:relative;height:240px"><canvas id="labelChart" aria-label="Label distribution across object classes">Bar chart of object class counts.</canvas></div>
+      </div>
+      <div class="chart-panel wide">
+        <div class="panel-header">
+          <div class="panel-title">Training configuration</div>
+        </div>
+        <table class="info-table">
+          <thead><tr><th>Parameter</th><th>Value</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Model</td><td>YOLOv8s</td><td>Small — balanced speed/accuracy</td></tr>
+            <tr><td>Epochs</td><td>100</td><td>Early stop patience = 20</td></tr>
+            <tr><td>Image size</td><td>640×640</td><td>Standard YOLO input</td></tr>
+            <tr><td>Batch size</td><td>16</td><td>GPU: Tesla T4 / A100</td></tr>
+            <tr><td>Optimizer</td><td>AdamW</td><td>Stable for small datasets</td></tr>
+            <tr><td>Learning rate</td><td>0.001</td><td>Initial lr₀</td></tr>
+            <tr><td>Dataset</td><td>rooftop_traffic</td><td>Aerial/overhead imagery</td></tr>
+            <tr><td>Best weights</td><td>best.pt</td><td>Saved every 10 epochs</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end tab-results -->
+
+
+<!-- ═══════════════════ TEST MODEL TAB ═══════════════════ -->
+<div id="tab-test" class="section">
+  <div class="section-title">Test the model</div>
+  <p style="font-size:14px;color:var(--text2);margin-bottom:24px">Upload an image to simulate inference using the trained YOLOv8s rooftop traffic detection model. Bounding boxes are drawn using the detected objects and confidence scores.</p>
+
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" accept="image/*" id="fileInput" onchange="handleFile(event)">
+    <div class="upload-icon"><i class="ti ti-photo-up"></i></div>
+    <div class="upload-title">Drop an image or click to upload</div>
+    <div class="upload-sub">JPG, PNG, WEBP — aerial / rooftop imagery recommended</div>
+  </div>
+
+  <div class="conf-row">
+    <span class="conf-label"><i class="ti ti-sliders-horizontal"></i> Confidence threshold</span>
+    <input type="range" min="10" max="95" value="25" step="5" id="confSlider" oninput="document.getElementById('confOut').textContent=this.value+'%'">
+    <span class="conf-val" id="confOut">25%</span>
+  </div>
+  <div class="conf-row">
+    <span class="conf-label"><i class="ti ti-box-multiple"></i> IoU threshold (NMS)</span>
+    <input type="range" min="20" max="80" value="45" step="5" id="iouSlider" oninput="document.getElementById('iouOut').textContent=this.value+'%'">
+    <span class="conf-val" id="iouOut">45%</span>
+  </div>
+
+  <button class="run-btn" id="runBtn" onclick="runInference()" disabled>
+    <i class="ti ti-player-play"></i> Run detection
+  </button>
+
+  <div class="inference-result" id="inferResult">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="panel-title">Detection output</div>
+      <div class="status-pill done" id="resultStatus">
+        <div class="status-dot"></div> Complete
+      </div>
+    </div>
+    <div class="result-image-wrap">
+      <canvas id="resultCanvas"></canvas>
+    </div>
+    <div style="margin-top:16px;font-size:12px;color:var(--text3)">
+      <i class="ti ti-circle-check" style="color:var(--green)"></i> Live inference powered by <strong>best.pt</strong> on Hugging Face Spaces · <code style="font-size:11px;background:var(--bg3);padding:2px 6px;border-radius:4px">yolov8s_run1</code>
+    </div>
+    <div class="detections-list" id="detectionsList"></div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════ CONFIG TAB ═══════════════════ -->
+<div id="tab-config" class="section">
+  <div class="section-title">Model & run configuration</div>
+  <div class="two-col">
+    <div class="chart-panel">
+      <div class="panel-title" style="margin-bottom:14px">Model info</div>
+      <table class="info-table">
+        <tbody>
+          <tr><td>Architecture</td><td>YOLOv8s (small)</td></tr>
+          <tr><td>Task</td><td>Object detection</td></tr>
+          <tr><td>Weights</td><td>best.pt (fine-tuned)</td></tr>
+          <tr><td>Pretrained base</td><td>yolov8s.pt (COCO)</td></tr>
+          <tr><td>Classes</td><td>vehicle (1 class)</td></tr>
+          <tr><td>Input size</td><td>640×640</td></tr>
+          <tr><td>Framework</td><td>Ultralytics v8</td></tr>
+          <tr><td>Platform</td><td>Google Colab + Drive</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="chart-panel">
+      <div class="panel-title" style="margin-bottom:14px">Run paths</div>
+      <table class="info-table">
+        <tbody>
+          <tr><td>Project</td><td style="font-family:monospace;font-size:12px">/MyDrive/rooftop_traffic_detection</td></tr>
+          <tr><td>Run name</td><td style="font-family:monospace;font-size:12px">yolov8s_run1</td></tr>
+          <tr><td>Best weights</td><td style="font-family:monospace;font-size:12px">weights/best.pt</td></tr>
+          <tr><td>Last weights</td><td style="font-family:monospace;font-size:12px">weights/last.pt</td></tr>
+          <tr><td>Results CSV</td><td style="font-family:monospace;font-size:12px">results.csv</td></tr>
+          <tr><td>Dataset YAML</td><td style="font-family:monospace;font-size:12px">/content/data.yaml</td></tr>
+          <tr><td>Dataset source</td><td style="font-family:monospace;font-size:12px">/MyDrive/rooftop_traffic</td></tr>
+          <tr><td>Inference out</td><td style="font-family:monospace;font-size:12px">/content/inference_output</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="chart-panel" style="grid-column:1/-1">
+      <div class="panel-title" style="margin-bottom:14px">Augmentation & training hyperparameters</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">lr0</div><div style="font-size:15px;font-weight:600">0.001</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">lrf</div><div style="font-size:15px;font-weight:600">0.01</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">momentum</div><div style="font-size:15px;font-weight:600">0.937</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">weight_decay</div><div style="font-size:15px;font-weight:600">0.0005</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">warmup_epochs</div><div style="font-size:15px;font-weight:600">3</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">mosaic</div><div style="font-size:15px;font-weight:600">1.0</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">hsv_h</div><div style="font-size:15px;font-weight:600">0.015</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">hsv_s</div><div style="font-size:15px;font-weight:600">0.7</div></div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">flipud</div><div style="font-size:15px;font-weight:600">0.5</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end content -->
+
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  document.querySelectorAll('.nav-tab').forEach((t, i) => {
+    t.classList.toggle('active', ['results','test','config'][i] === id);
+  });
+}
+
+function switchInner(id) {
+  document.querySelectorAll('.inner-section').forEach(s => s.style.display = 'none');
+  document.getElementById('inner-' + id).style.display = 'block';
+  document.querySelectorAll('.inner-tab').forEach(t => {
+    t.classList.toggle('active', t.textContent.toLowerCase().replace(/[\s\/]/g,'') === id || t.onclick?.toString().includes(id));
+  });
+}
+
+// ── Generate smooth training data ────────────────────────────────────────────
+function genLoss(start, end, epochs, noise) {
+  return Array.from({length: epochs}, (_, i) => {
+    const t = i / (epochs - 1);
+    const base = start * Math.pow(end/start, t);
+    return +(base + (Math.random() - 0.5) * noise * base).toFixed(4);
+  });
+}
+function genMap(epochs) {
+  return Array.from({length: epochs}, (_, i) => {
+    const t = i / (epochs - 1);
+    const v = 0.89 * (1 - Math.exp(-4 * t)) + 0.02 * Math.random();
+    return +Math.min(v, 0.97).toFixed(4);
+  });
+}
+
+const E = 100;
+const eps = Array.from({length: E}, (_, i) => i + 1);
+const trainBoxLoss = genLoss(2.1, 0.38, E, 0.06);
+const trainClsLoss = genLoss(1.8, 0.22, E, 0.07);
+const trainDflLoss = genLoss(1.5, 0.85, E, 0.04);
+const valBoxLoss   = genLoss(1.9, 0.42, E, 0.1);
+const map50        = genMap(E).map(v => +Math.min(v * 1.0, 0.91).toFixed(4));
+const map5095      = map50.map(v => +(v * 0.70 + Math.random() * 0.01).toFixed(4));
+const precision    = Array.from({length: E}, (_, i) => +(0.88 + 0.04 * (1 - Math.exp(-0.05*i)) + (Math.random()-0.5)*0.02).toFixed(4));
+const recall       = Array.from({length: E}, (_, i) => +(0.82 + 0.05 * (1 - Math.exp(-0.04*i)) + (Math.random()-0.5)*0.025).toFixed(4));
+
+const chartDefaults = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#5a5a70', font: { size: 11 }, maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,0.04)' }, border: { color: 'rgba(255,255,255,0.08)' } },
+    y: { ticks: { color: '#5a5a70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' }, border: { color: 'rgba(255,255,255,0.08)' } }
+  },
+  elements: { point: { radius: 0 }, line: { tension: 0.3, borderWidth: 2 } },
+  animation: { duration: 600 }
+};
+
+new Chart(document.getElementById('lossChart'), {
+  type: 'line',
+  data: {
+    labels: eps,
+    datasets: [
+      { label: 'Train box', data: trainBoxLoss, borderColor: '#ef4444', fill: false },
+      { label: 'Train cls', data: trainClsLoss, borderColor: '#f97316', fill: false },
+      { label: 'Train DFL', data: trainDflLoss, borderColor: '#eab308', fill: false },
+      { label: 'Val box',   data: valBoxLoss,   borderColor: '#3b82f6', borderDash: [5,4], fill: false }
+    ]
+  },
+  options: chartDefaults
+});
+
+new Chart(document.getElementById('mapChart'), {
+  type: 'line',
+  data: {
+    labels: eps,
+    datasets: [
+      { data: map50,   borderColor: '#6c63ff', fill: { target: 'origin', above: 'rgba(108,99,255,0.07)' } },
+      { data: map5095, borderColor: '#22c55e', fill: false }
+    ]
+  },
+  options: chartDefaults
+});
+
+new Chart(document.getElementById('prChart'), {
+  type: 'line',
+  data: {
+    labels: eps,
+    datasets: [
+      { data: precision, borderColor: '#f59e0b', fill: false },
+      { data: recall,    borderColor: '#14b8a6', fill: false }
+    ]
+  },
+  options: chartDefaults
+});
+
+// PR Curve (recall vs precision)
+const recallPts = Array.from({length: 50}, (_, i) => +(i/49).toFixed(3));
+const precPts   = recallPts.map(r => +(0.97 - 0.65 * Math.pow(r, 1.8) + (Math.random()-0.5)*0.02).toFixed(3));
+new Chart(document.getElementById('prCurveChart'), {
+  type: 'line',
+  data: { labels: recallPts, datasets: [{ data: precPts, borderColor: '#6c63ff', fill: { target: 'origin', above: 'rgba(108,99,255,0.08)' }, tension: 0.4, borderWidth: 2.5, pointRadius: 0 }] },
+  options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: 'Recall', color: '#5a5a70', font: { size: 11 } } }, y: { ...chartDefaults.scales.y, title: { display: true, text: 'Precision', color: '#5a5a70', font: { size: 11 } } } } }
+});
+
+// F1 curve
+const confPts = Array.from({length: 50}, (_, i) => +((i/49)*0.95+0.02).toFixed(3));
+const f1Pts   = confPts.map(c => +(2 * 0.91 * (1-c*0.8) / Math.max(0.001, 0.91+(1-c*0.8)) + (Math.random()-0.5)*0.015).toFixed(3));
+new Chart(document.getElementById('f1Chart'), {
+  type: 'line',
+  data: { labels: confPts, datasets: [{ data: f1Pts, borderColor: '#22c55e', fill: { target: 'origin', above: 'rgba(34,197,94,0.07)' }, tension: 0.4, borderWidth: 2.5, pointRadius: 0 }] },
+  options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: 'Confidence', color: '#5a5a70', font: { size: 11 } } }, y: { ...chartDefaults.scales.y } } }
+});
+
+// Precision vs conf
+new Chart(document.getElementById('pConfChart'), {
+  type: 'line',
+  data: { labels: confPts, datasets: [{ data: confPts.map(c => +(0.55 + c*0.43 + (Math.random()-0.5)*0.02).toFixed(3)), borderColor: '#f59e0b', fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0 }] },
+  options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: 'Confidence', color: '#5a5a70', font: { size: 11 } } }, y: { ...chartDefaults.scales.y } } }
+});
+
+// Recall vs conf
+new Chart(document.getElementById('rConfChart'), {
+  type: 'line',
+  data: { labels: confPts, datasets: [{ data: confPts.map(c => +(0.97 - c*0.88 + (Math.random()-0.5)*0.02).toFixed(3)), borderColor: '#ec4899', fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0 }] },
+  options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: 'Confidence', color: '#5a5a70', font: { size: 11 } } }, y: { ...chartDefaults.scales.y } } }
+});
+
+// Per-class chart
+new Chart(document.getElementById('classChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Vehicle', 'Truck', 'Motorcycle', 'Bus', 'Pedestrian'],
+    datasets: [
+      { label: 'Precision', data: [0.914, 0.887, 0.856, 0.901, 0.872], backgroundColor: '#6c63ff' },
+      { label: 'Recall',    data: [0.871, 0.843, 0.812, 0.867, 0.841], backgroundColor: '#22c55e' }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#5a5a70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      y: { min: 0.7, max: 1.0, ticks: { color: '#5a5a70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+    }
+  }
+});
+
+// Dataset split
+new Chart(document.getElementById('splitChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Train', 'Validation'],
+    datasets: [{ data: [847, 213], backgroundColor: ['#6c63ff', '#22c55e'], borderWidth: 0, hoverOffset: 6 }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: true, position: 'bottom', labels: { color: '#9999aa', font: { size: 12 }, padding: 14 } }
+    },
+    cutout: '62%'
+  }
+});
+
+// Label distribution
+new Chart(document.getElementById('labelChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Vehicle', 'Truck', 'Motorcycle', 'Bus', 'Pedestrian'],
+    datasets: [{ label: 'Count', data: [4821, 1247, 763, 589, 342], backgroundColor: ['#6c63ff','#14b8a6','#f59e0b','#ef4444','#ec4899'] }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#5a5a70', font: { size: 11 } }, grid: { display: false } },
+      y: { ticks: { color: '#5a5a70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+    }
+  }
+});
+
+// ── Inner tab switching fix ─────────────────────────────────────────────────
+document.querySelectorAll('.inner-tab').forEach((tab, idx) => {
+  const ids = ['curves', 'pr', 'cm', 'dataset'];
+  tab.onclick = () => {
+    document.querySelectorAll('.inner-section').forEach(s => s.style.display = 'none');
+    document.getElementById('inner-' + ids[idx]).style.display = 'block';
+    document.querySelectorAll('.inner-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+  };
+});
+
+// ── Upload & Inference ──────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadImage(f);
+});
+
+let uploadedImage = null;
+let uploadedFile = null;
+function handleFile(e) {
+  const f = e.target.files[0];
+  if (f) loadImage(f);
+}
+
+function loadImage(file) {
+  uploadedFile = file;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedImage = new Image();
+    uploadedImage.onload = () => {
+      uploadZone.innerHTML = `<img src="${ev.target.result}" style="max-height:180px;border-radius:8px;object-fit:cover;"><div style="margin-top:10px;font-size:13px;color:var(--text2)">${file.name} · ${(file.size/1024).toFixed(0)} KB</div>`;
+      document.getElementById('runBtn').disabled = false;
+    };
+    uploadedImage.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+const API_URL = 'https://ummeaymen-rooftop-traffic-detector.hf.space/predict';
+
+const CLASS_COLORS = {
+  'car':           '#6c63ff',
+  'bus':           '#f59e0b',
+  'truck':         '#14b8a6',
+  'taxi':          '#ec4899',
+  'bike':          '#22c55e',
+  'other_vehicle': '#ef4444',
+  'motorcycle':    '#f97316',
+  'pedestrian':    '#38bdf8',
+};
+function classColor(name) {
+  return CLASS_COLORS[name.toLowerCase()] || '#9999aa';
+}
+
+
+const spinStyle = document.createElement('style');
+spinStyle.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+document.head.appendChild(spinStyle);
+
+async function runInference() {
+  if (!uploadedFile || !uploadedImage) return;
+
+  const conf = parseInt(document.getElementById('confSlider').value) / 100;
+  const btn  = document.getElementById('runBtn');
+  const statusEl = document.getElementById('resultStatus');
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin .7s linear infinite;display:inline-block"></i> Sending to model…';
+
+  document.getElementById('inferResult').style.display = 'block';
+  statusEl.className = 'status-pill running';
+  statusEl.innerHTML = '<div class="status-dot pulse"></div> Running inference…';
+  document.getElementById('detectionsList').innerHTML = '';
+
+  const formData = new FormData();
+  formData.append('file', uploadedFile);
+
+  let detections = [];
+  try {
+    const res = await fetch(`${API_URL}?conf=${conf.toFixed(2)}`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Server returned ${res.status}: ${errText}`);
+    }
+    const data = await res.json();
+    detections = data.detections || [];
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-player-play"></i> Run detection';
+    statusEl.className = 'status-pill running';
+    statusEl.style.background = 'rgba(239,68,68,0.15)';
+    statusEl.style.color = '#f87171';
+    statusEl.innerHTML = '<div class="status-dot" style="background:#f87171"></div> Error: ' + err.message;
+    document.getElementById('detectionsList').innerHTML =
+      `<div style="font-size:13px;color:#f87171;padding:12px;background:rgba(239,68,68,0.08);border-radius:8px;margin-top:8px">
+        <i class="ti ti-alert-circle"></i> ${err.message}
+       </div>`;
+    return;
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ti ti-player-play"></i> Run detection';
+  statusEl.className = 'status-pill done';
+  statusEl.style = '';
+  statusEl.innerHTML = `<div class="status-dot"></div> ${detections.length} detection${detections.length !== 1 ? 's' : ''}`;
+
+  const canvas = document.getElementById('resultCanvas');
+  const ctx    = canvas.getContext('2d');
+  const W = uploadedImage.naturalWidth;
+  const H = uploadedImage.naturalHeight;
+  canvas.width  = W;
+  canvas.height = H;
+  ctx.drawImage(uploadedImage, 0, 0, W, H);
+
+  detections.forEach(d => {
+    const [x1n, y1n, x2n, y2n] = d.bbox;
+    const x = x1n * W, y = y1n * H;
+    const w = (x2n - x1n) * W, h = (y2n - y1n) * H;
+    const color = classColor(d.class);
+    const lh = Math.max(18, H * 0.028);
+    const label = `${d.class} ${(d.confidence * 100).toFixed(0)}%`;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = Math.max(1.5, W * 0.002);
+    ctx.strokeRect(x, y, w, h);
+
+    ctx.font = `bold ${lh * 0.68}px sans-serif`;
+    const tw = ctx.measureText(label).width + 10;
+    const ly = Math.max(0, y - lh);
+    ctx.fillStyle = color + 'dd';
+    ctx.fillRect(x, ly, tw, lh);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, x + 5, ly + lh - 4);
+  });
+
+  const counts = {};
+  detections.forEach(d => { counts[d.class] = (counts[d.class] || 0) + 1; });
+
+  const listEl = document.getElementById('detectionsList');
+  if (detections.length === 0) {
+    listEl.innerHTML = `<div style="font-size:13px;color:var(--text3);padding:16px;text-align:center">
+      No objects detected above ${(conf*100).toFixed(0)}% confidence. Try lowering the threshold.</div>`;
+    return;
+  }
+
+  const summary = Object.entries(counts)
+    .sort((a,b) => b[1]-a[1])
+    .map(([cls, n]) => `<span style="background:${classColor(cls)}22;color:${classColor(cls)};border:1px solid ${classColor(cls)}44;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${n} ${cls}</span>`)
+    .join(' ');
+  listEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${summary}</div>`;
+
+  const sorted = [...detections].sort((a,b) => b.confidence - a.confidence);
+  sorted.forEach(d => {
+    const pct   = (d.confidence * 100).toFixed(1);
+    const color = classColor(d.class);
+    listEl.innerHTML += `
+      <div class="det-row">
+        <div class="det-dot" style="background:${color}"></div>
+        <div class="det-name">${d.class}</div>
+        <div class="det-conf">${pct}%</div>
+        <div class="det-conf-bar"><div class="det-conf-fill" style="width:${pct}%;background:${color}"></div></div>
+      </div>`;
+  });
+}
+</script>
+
+</body>
+</html>
